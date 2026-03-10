@@ -45,6 +45,11 @@ public class MarkdownParserUtil {
 			return markdownCode; // No code block found
 		}
 
+        if(startIndex == markdownCode.length() - 3) {
+            // 只有后面有```的符号
+            return markdownCode.substring(0, startIndex);
+        }
+
 		// Skip the opening delimiter and optional language specification
 		int contentStart = startIndex + delimiterLength;
 		while (contentStart < markdownCode.length() && markdownCode.charAt(contentStart) != '\n') {

@@ -96,11 +96,20 @@ public class SqlServerJdbcDdl extends AbstractJdbcDdl {
 
 	@Override
 	public List<TableInfoBO> showTables(Connection connection, String schema, String tablePattern) {
-		String sql = "SELECT t.TABLE_NAME, \n" + "CAST(ep.value AS NVARCHAR(MAX)) AS TABLE_COMMENT \n"
-				+ "FROM INFORMATION_SCHEMA.TABLES t \n" + "LEFT JOIN sys.tables st ON t.TABLE_NAME = st.name \n"
-				+ "AND SCHEMA_NAME(st.schema_id) = t.TABLE_SCHEMA "
-				+ "LEFT JOIN sys.extended_properties ep ON st.object_id = ep.major_id AND ep.minor_id = 0 AND ep.name = 'MS_Description' \n"
-				+ "WHERE t.TABLE_SCHEMA = '%s' AND t.TABLE_TYPE = 'BASE TABLE' \n";
+//		String sql = "SELECT t.TABLE_NAME, \n" + "CAST(ep.value AS NVARCHAR(MAX)) AS TABLE_COMMENT \n"
+//				+ "FROM INFORMATION_SCHEMA.TABLES t \n" + "LEFT JOIN sys.tables st ON t.TABLE_NAME = st.name \n"
+//				+ "AND SCHEMA_NAME(st.schema_id) = t.TABLE_SCHEMA "
+//				+ "LEFT JOIN sys.extended_properties ep ON st.object_id = ep.major_id AND ep.minor_id = 0 AND ep.name = 'MS_Description' \n"
+//				+ "WHERE t.TABLE_SCHEMA = '%s' AND t.TABLE_TYPE = 'BASE TABLE' \n";
+
+        //改成兼容SQLSERVER2012
+        String sql = "SELECT t.TABLE_NAME, \n" +
+                "CAST(ep.value AS NVARCHAR(MAX)) AS TABLE_COMMENT \n" +
+                "FROM [%s].INFORMATION_SCHEMA.TABLES t \n" +
+                "LEFT JOIN [%s].sys.tables st ON t.TABLE_NAME = st.name \n" +
+                "AND SCHEMA_NAME(st.schema_id) = t.TABLE_SCHEMA " +
+                "LEFT JOIN [%s].sys.extended_properties ep ON st.object_id = ep.major_id AND ep.minor_id = 0 AND ep.name = 'MS_Description' AND ep.class = 1 \n" +
+                "WHERE t.TABLE_SCHEMA = 'dbo' AND t.TABLE_TYPE = 'BASE TABLE' \n";
 		if (StringUtils.isNotBlank(tablePattern)) {
 			sql += "AND t.TABLE_NAME LIKE '%%' + '%s' + '%%' \n";
 		}
@@ -110,7 +119,7 @@ public class SqlServerJdbcDdl extends AbstractJdbcDdl {
 		List<TableInfoBO> tableInfoList = Lists.newArrayList();
 		try {
 			String[][] resultArr = SqlExecutor.executeSqlAndReturnArr(connection,
-					String.format(sql, schema, tablePattern));
+					String.format(sql, schema, schema, schema, tablePattern));
 			if (resultArr.length <= 1) {
 				return Lists.newArrayList();
 			}
@@ -133,17 +142,27 @@ public class SqlServerJdbcDdl extends AbstractJdbcDdl {
 
 	@Override
 	public List<TableInfoBO> fetchTables(Connection connection, String schema, List<String> tables) {
-		String sql = "SELECT t.TABLE_NAME, \n" + "CAST(ep.value AS NVARCHAR(MAX)) AS TABLE_COMMENT \n"
-				+ "FROM INFORMATION_SCHEMA.TABLES t \n" + "LEFT JOIN sys.tables st ON t.TABLE_NAME = st.name \n"
-				+ "LEFT JOIN sys.extended_properties ep ON st.object_id = ep.major_id AND ep.minor_id = 0 AND ep.name = 'MS_Description' \n"
-				+ "WHERE t.TABLE_SCHEMA = '%s' AND t.TABLE_TYPE = 'BASE TABLE' \n" + "AND t.TABLE_NAME IN (%s) \n"
-				+ "ORDER BY t.TABLE_NAME;";
+//		String sql = "SELECT t.TABLE_NAME, \n" + "CAST(ep.value AS NVARCHAR(MAX)) AS TABLE_COMMENT \n"
+//				+ "FROM INFORMATION_SCHEMA.TABLES t \n" + "LEFT JOIN sys.tables st ON t.TABLE_NAME = st.name \n"
+//				+ "LEFT JOIN sys.extended_properties ep ON st.object_id = ep.major_id AND ep.minor_id = 0 AND ep.name = 'MS_Description' \n"
+//				+ "WHERE t.TABLE_SCHEMA = '%s' AND t.TABLE_TYPE = 'BASE TABLE' \n" + "AND t.TABLE_NAME IN (%s) \n"
+//				+ "ORDER BY t.TABLE_NAME;";
+
+        //改成兼容SQLSERVER2012
+        String sql = "SELECT t.TABLE_NAME, \n" +
+                "CAST(ep.value AS NVARCHAR(MAX)) AS TABLE_COMMENT \n" +
+                "FROM [%s].INFORMATION_SCHEMA.TABLES t \n" +
+                "LEFT JOIN [%s].sys.tables st ON t.TABLE_NAME = st.name \n" +
+                "AND SCHEMA_NAME(st.schema_id) = t.TABLE_SCHEMA " +
+                "LEFT JOIN [%s].sys.extended_properties ep ON st.object_id = ep.major_id AND ep.minor_id = 0 AND ep.name = 'MS_Description' AND ep.class = 1 \n" +
+                "WHERE t.TABLE_SCHEMA = 'dbo' AND t.TABLE_TYPE = 'BASE TABLE' AND t.TABLE_NAME IN (%s) \n";
+
 
 		List<TableInfoBO> tableInfoList = Lists.newArrayList();
 		String tableListStr = String.join(", ", tables.stream().map(x -> "'" + x + "'").collect(Collectors.toList()));
 		try {
 			String[][] resultArr = SqlExecutor.executeSqlAndReturnArr(connection,
-					String.format(sql, schema, tableListStr));
+					String.format(sql, schema, schema, schema, tableListStr));
 			if (resultArr.length <= 1) {
 				return Lists.newArrayList();
 			}
@@ -166,24 +185,43 @@ public class SqlServerJdbcDdl extends AbstractJdbcDdl {
 
 	@Override
 	public List<ColumnInfoBO> showColumns(Connection connection, String schema, String table) {
-		String sql = "SELECT \n" + "c.COLUMN_NAME, \n" + "CAST(ep.value AS NVARCHAR(MAX)) AS COLUMN_COMMENT, \n"
-				+ "c.DATA_TYPE, \n"
-				+ "CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN 'true' ELSE 'false' END AS IS_PRIMARY_KEY, \n"
-				+ "CASE WHEN c.IS_NULLABLE = 'NO' THEN 'true' ELSE 'false' END AS IS_NOT_NULL \n"
-				+ "FROM INFORMATION_SCHEMA.COLUMNS c \n"
-				+ "LEFT JOIN sys.columns sc ON OBJECT_ID(c.TABLE_SCHEMA + '.' + c.TABLE_NAME) = sc.object_id AND c.COLUMN_NAME = sc.name \n"
-				+ "LEFT JOIN sys.extended_properties ep ON sc.object_id = ep.major_id AND sc.column_id = ep.minor_id AND ep.name = 'MS_Description' \n"
-				+ "LEFT JOIN ( \n" + "    SELECT ku.TABLE_SCHEMA, ku.TABLE_NAME, ku.COLUMN_NAME \n"
-				+ "    FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc \n"
-				+ "    JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE ku ON tc.CONSTRAINT_NAME = ku.CONSTRAINT_NAME \n"
-				+ "    WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY' \n"
-				+ ") pk ON c.TABLE_SCHEMA = pk.TABLE_SCHEMA AND c.TABLE_NAME = pk.TABLE_NAME AND c.COLUMN_NAME = pk.COLUMN_NAME \n"
-				+ "WHERE c.TABLE_SCHEMA = '%s' AND c.TABLE_NAME = '%s' \n" + "ORDER BY c.ORDINAL_POSITION;";
+//		String sql = "SELECT \n" + "c.COLUMN_NAME, \n" + "CAST(ep.value AS NVARCHAR(MAX)) AS COLUMN_COMMENT, \n"
+//				+ "c.DATA_TYPE, \n"
+//				+ "CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN 'true' ELSE 'false' END AS IS_PRIMARY_KEY, \n"
+//				+ "CASE WHEN c.IS_NULLABLE = 'NO' THEN 'true' ELSE 'false' END AS IS_NOT_NULL \n"
+//				+ "FROM INFORMATION_SCHEMA.COLUMNS c \n"
+//				+ "LEFT JOIN sys.columns sc ON OBJECT_ID(c.TABLE_SCHEMA + '.' + c.TABLE_NAME) = sc.object_id AND c.COLUMN_NAME = sc.name \n"
+//				+ "LEFT JOIN sys.extended_properties ep ON sc.object_id = ep.major_id AND sc.column_id = ep.minor_id AND ep.name = 'MS_Description' \n"
+//				+ "LEFT JOIN ( \n" + "    SELECT ku.TABLE_SCHEMA, ku.TABLE_NAME, ku.COLUMN_NAME \n"
+//				+ "    FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc \n"
+//				+ "    JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE ku ON tc.CONSTRAINT_NAME = ku.CONSTRAINT_NAME \n"
+//				+ "    WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY' \n"
+//				+ ") pk ON c.TABLE_SCHEMA = pk.TABLE_SCHEMA AND c.TABLE_NAME = pk.TABLE_NAME AND c.COLUMN_NAME = pk.COLUMN_NAME \n"
+//				+ "WHERE c.TABLE_SCHEMA = '%s' AND c.TABLE_NAME = '%s' \n" + "ORDER BY c.ORDINAL_POSITION;";
+
+        //改成兼容SQLSERVER2012
+        String sql = "SELECT \n" +
+                "    c.COLUMN_NAME, \n" +
+                "    CAST(ep.value AS NVARCHAR(MAX)) AS COLUMN_COMMENT, \n" +
+                "    c.DATA_TYPE, \n" +
+                "    CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN 'true' ELSE 'false' END AS IS_PRIMARY_KEY, \n" +
+                "    CASE WHEN c.IS_NULLABLE = 'NO' THEN 'true' ELSE 'false' END AS IS_NOT_NULL \n" +
+                "FROM [%s].INFORMATION_SCHEMA.COLUMNS c \n" +
+                "JOIN [%s].sys.columns sc ON OBJECT_ID(c.TABLE_SCHEMA + '.' + c.TABLE_NAME) = sc.object_id AND c.COLUMN_NAME = sc.name \n" +
+                "LEFT JOIN [%s].sys.extended_properties ep ON sc.object_id = ep.major_id AND sc.column_id = ep.minor_id AND ep.name = 'MS_Description' \n" +
+                "LEFT JOIN ( \n" +
+                "    SELECT ku.TABLE_SCHEMA, ku.TABLE_NAME, ku.COLUMN_NAME \n" +
+                "    FROM [%s].INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc \n" +
+                "    JOIN [%s].INFORMATION_SCHEMA.KEY_COLUMN_USAGE ku ON tc.CONSTRAINT_NAME = ku.CONSTRAINT_NAME \n" +
+                "    WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY' \n" +
+                ") pk ON c.TABLE_SCHEMA = pk.TABLE_SCHEMA AND c.TABLE_NAME = pk.TABLE_NAME AND c.COLUMN_NAME = pk.COLUMN_NAME \n" +
+                "WHERE c.TABLE_NAME = '%s' \n" +
+                "ORDER BY c.ORDINAL_POSITION;";
 
 		List<ColumnInfoBO> columnInfoList = Lists.newArrayList();
 		try {
 			String[][] resultArr = SqlExecutor.executeSqlAndReturnArr(connection, null,
-					String.format(sql, schema, table));
+					String.format(sql, schema, schema, schema, schema, schema, table));
 			if (resultArr.length <= 1) {
 				return Lists.newArrayList();
 			}
